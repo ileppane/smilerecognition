@@ -1,3 +1,5 @@
+#!/usr/bin/env python -W ignore::DeprecationWarning
+#!/usr/bin/python
 # http://flothesof.github.io/smile-recognition.html
 import os
 from sklearn import datasets
@@ -37,7 +39,7 @@ trainer.results = json.load(open('results.xml'))
 # smile classifier
 svc_1 = SVC(kernel='linear') # initialize
 indices = [i for i in trainer.results]
-data = faces.data[indices, :] # image data
+data = faces.data[map(int,indices), :] # image data MUOKATTU: map
 target = [trainer.results[i] for i in trainer.results]
 target = array(target).astype(int32) # target vector
 
@@ -96,38 +98,3 @@ def extract_face_features(gray, detected_face, offset_coefficients):
 # this predicts smile, i.e. uses the SVC classifier
 def predict_face_is_smiling(extracted_face):
     return svc_1.predict(extracted_face.ravel())
-
-# THE MAIN PROGRAM
-# http://codeplasma.com/2012/12/03/getting-webcam-images-with-python-and-opencv-2-for-real-this-time/
-ramp_frames = 30 #Number of frames to throw away while the camera adjusts to light levels
-camera = cv2.VideoCapture(0)
-def get_image():
-    retval, im = camera.read()
-    return im
-for i in xrange(ramp_frames):
-    temp = get_image()
-print("Taking image...")
-camera_capture = get_image()
-del(camera)
-
-input_face = camera_capture
-gray, detface = detect_face(input_face)
-#face_index = 0
-for face in detface:
-    (x, y, w, h) = face
-    if w > 100:
-        extracted_face = extract_face_features(gray, face, (0.15, 0.2)) #(horiz,vert) (0.1, 0.05)=> toimii!
-                                                                        #(0.03, 0.05) (0.075, 0.05)
-                                                                        # kts. extract_test.py kalibroimisesta
-        prediction_result = predict_face_is_smiling(extracted_face)
-        cv2.rectangle(input_face, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        #face_index += 1
-
-if prediction_result == 1:
-    cv2.imshow("Smile", input_face)
-else:
-    cv2.imshow("No smile", input_face)    
-
-cv2.waitKey(0)
-
-
