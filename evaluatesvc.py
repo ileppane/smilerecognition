@@ -1,74 +1,76 @@
 #!/usr/bin/python
 import cv2
-from ipywidgets import widgets
-from IPython.display import display, clear_output
-import smilerecognition
 import numpy as np
 from random import randint
 from sklearn import datasets
 from pylab import *
 import json
-from sklearn.svm import SVC
-from sklearn.cross_validation import train_test_split
-from sklearn.cross_validation import cross_val_score, KFold
+from scipy.ndimage import zoom
 
-# this is the training dataset
-faces = datasets.fetch_olivetti_faces()
+# THIS FUNCTION TAKES THE FRAME FROM THE CAMERA, CONVERTS IT TO GRAYSCALE AND APPLIES THE HAAR CASCADE TO IT
+def detect_face(frame):
+    cascPath = "C:\Users\ileppane\smilerecognition\haarcascade_frontalface_default.xml"
+    faceCascade = cv2.CascadeClassifier(cascPath)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    detected_faces = faceCascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=6,
+            minSize=(30, 30),
+            flags=cv2.cv.CV_HAAR_SCALE_IMAGE
+        )
+    return gray, detected_faces
 
-# this is the benchmark dataset
+# this extracts features from the detected face
+def extract_face_features(gray, detected_face, offset_coefficients):
+    (x, y, w, h) = detected_face
+    horizontal_offset = offset_coefficients[0] * w
+    vertical_offset = offset_coefficients[1] * h
+    extracted_face = gray[y+vertical_offset:y+h, x+horizontal_offset:x-horizontal_offset+w]
+    # zoom to match size of the olivetti faces
+    new_extracted_face = zoom(extracted_face, (64. / extracted_face.shape[0], 64. / extracted_face.shape[1]))
+    new_extracted_face = new_extracted_face.astype(float32)
+    new_extracted_face /= float(new_extracted_face.max())
+    return new_extracted_face
 
-####################################################################
-# TRAIN THE SVC
-# read the existing file where results have been saved through the GUI
-class Trainer:
-    def __init__(self):
-        self.results = {}
-        self.imgs = faces.images
-        self.index = 0
+# this predicts smile, i.e. uses the SVC classifier
+def predict_face_is_smiling(svc, extracted_face):
+    return svc.predict(extracted_face.ravel())
+
+# FUNCTION FOR PREDICTING SMILE FROM INPUT FACE IMAGE USING THE SVC CLASSIFIER
+def predictsmile(svc, inputface, printoutput, param):
+    # printoutput is 1 if the face is wanted as output
+    # param are the stretching coefficients, e.g. (0.15,0.2)
+    testface = cv2.imread(inputface)
+    nodetect = 0 # is assigned 1 if no face is detected from the input testface
+    predictionresult = 0 # is assigned 1 if smile is predicted
+    gray, detface = detect_face(testface)
+    if len(detface) == 1:
+        for face in detface:
+            (x, y, w, h) = face
+            if w > 100: #w pienenee kun etaisyys kamerasta kasvaa
+                extractedface = extract_face_features(gray, face, param)
+                predictionresult = int(predict_face_is_smiling(svc, extractedface))
+                     
+                if printoutput == 1:
+                    cv2.rectangle(testface, (x, y), (x+w, y+h), (0, 255, 0), 2)
         
-    def increment_face(self):
-        if self.index + 1 >= len(self.imgs):
-            return self.index
-        else:
-            while str(self.index) in self.results:
-                print self.index
-                self.index += 1
-            return self.index
-    
-    def record_result(self, smile=True):
-        self.results[str(self.index)] = smile
+        # PRINT THE OUTPUT
+        if printoutput == 1:
+            if predictionresult == 1:
+                print "smile"
+            else:
+                print "no smile"        
+            subplot(121)
+            imshow(cv2.cvtColor(testface, cv2.COLOR_BGR2GRAY), cmap='gray') # show testface
+            subplot(122)
+            imshow(extractedface, cmap='gray')                              # show extracted face
 
-trainer = Trainer()
-trainer.results = json.load(open('results.xml'))
-svc_1 = SVC(kernel='linear') # initialize
-indices = [i for i in trainer.results]
-data = faces.data[map(int,indices), :] # image data MUOKATTU: map
-target = [trainer.results[i] for i in trainer.results]
-target = array(target).astype(int32) # target vector
-X_train, X_test, y_train, y_test = train_test_split(data, target, test_size=0.25, random_state=0)
-smilerecognition.train_and_evaluate(smilerecognition.svc_1, X_train, X_test, y_train, y_test)
-#
-############################################################################
+    else:
+        nodetect = 1
+        if printoutput == 1:
+            print "Error: no face detected"
 
-############################################################################
-# EVALUATE THE SVC AGAINS OTHER FACE DATA
-#
-random_image_button = widgets.Button(description="New image!")
-
-def display_face(face):
-    clear_output()
-    imshow(face, cmap='gray')
-    axis('off')
-    
-def display_face_and_prediction(b):
-    index = randint(0, 400)
-    face = faces.images[index]
-    #face = cv2.imread('AM08HAS.jpg')
-    display_face(face)
-    print("This is a smile: {0}".format(smilerecognition.svc_1.predict(faces.data[index, :])==1))
-
-random_image_button.on_click(display_face_and_prediction)
-display(random_image_button)
-display_face_and_prediction(0)
+    return predictionresult, nodetect
 
 
